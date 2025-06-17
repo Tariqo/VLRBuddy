@@ -16,7 +16,6 @@ const LeaguesScreen = () => {
         setEvents(response.data.data);
       } catch (err) {
         setError('Failed to fetch events. Please ensure you have internet connection.');
-        console.error(err);
       } finally {
         setLoading(false);
       }

@@ -12,6 +12,8 @@ import FavouritesScreen from '../screens/FavouritesScreen';
 import NewsScreen from '../screens/NewsScreen';
 import LeaguesScreen from '../screens/LeaguesScreen';
 import MatchDetailScreen from '../screens/MatchDetailScreen';
+import TeamDetailScreen from '../screens/TeamDetailScreen';
+import PlayerDetailScreen from '../screens/PlayerDetailScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
@@ -32,6 +34,20 @@ function AllGamesStack() {
     >
       <Stack.Screen name="All Games List" component={AllGamesScreen} options={{ headerShown: false }} />
       <Stack.Screen name="MatchDetail" component={MatchDetailScreen} options={{ title: 'Match Details' }} />
+      <Stack.Screen 
+        name="TeamDetail" 
+        component={TeamDetailScreen}
+        options={({ route }) => ({ 
+          title: route.params?.teamName || 'Team Details'
+        })}
+      />
+      <Stack.Screen 
+        name="PlayerDetail" 
+        component={PlayerDetailScreen}
+        options={({ route }) => ({ 
+          title: route.params?.playerName || 'Player Details'
+        })}
+      />
     </Stack.Navigator>
   );
 }

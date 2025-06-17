@@ -14,12 +14,10 @@ const LiveScreen = () => {
   useEffect(() => {
     const fetchLiveMatches = async () => {
       try {
-        const response = await axios.get('https://vlr.orlandomm.net/api/v1/matches');
-        const filteredLiveMatches = response.data.data.filter(match => match.status === 'live' || match.status === 'running');
-        setLiveMatches(filteredLiveMatches);
+        const response = await axios.get('https://vlr.orlandomm.net/api/v1/matches/live');
+        setLiveMatches(response.data.data);
       } catch (err) {
-        setError('Failed to fetch live matches. Please ensure you have internet connection.');
-        console.error(err);
+        setError('Failed to fetch live matches');
       } finally {
         setLoading(false);
       }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
@@ -20,7 +20,7 @@ const TeamDetailScreen = ({ route }) => {
           axios.get(`https://vlr.orlandomm.net/api/v1/teams/${teamId}`),
           axios.get('https://vlr.orlandomm.net/api/v1/events')
         ]);
-        
+
         setTeamData(teamResponse.data.data);
         setAllEvents(eventsResponse.data.data);
       } catch (err) {
@@ -61,25 +61,20 @@ const TeamDetailScreen = ({ route }) => {
     );
   }
 
-  const renderStaffItem = ({ item }) => (
-    <View style={styles.staffItem}>
-      <View style={styles.staffInfo}>
-        <Text style={styles.staffName}>{item.name}</Text>
-        <Text style={styles.staffRole}>{item.role}</Text>
-      </View>
-    </View>
-  );
-
   const renderEvent = (event) => {
     const eventData = allEvents.find(e => e.id === event.id);
     return (
       <TouchableOpacity key={event.id} style={styles.eventCard}>
-        {eventData?.logo && (
+        {eventData?.img ? (
           <ExpoImage
-            source={{ uri: eventData.logo }}
+            source={{ uri: eventData.img }}
             style={styles.eventCardLogo}
             contentFit="contain"
           />
+        ) : (
+          <View style={styles.eventCardLogoPlaceholder}>
+            <Text style={styles.eventCardLogoPlaceholderText}>NO IMAGE</Text>
+          </View>
         )}
         <Text style={styles.eventName}>{event.name}</Text>
         <Text style={styles.eventYear}>{event.year}</Text>
@@ -88,37 +83,35 @@ const TeamDetailScreen = ({ route }) => {
     );
   };
 
-  const renderMatch = (match, isUpcoming = false) => {
-    return (
-      <TouchableOpacity 
-        key={match.match.id} 
-        style={styles.matchItem}
-        onPress={() => navigation.navigate('MatchDetail', { matchId: match.match?.id })}
-      >
-        <View style={styles.matchHeader}>
-          <ExpoImage 
-            source={{ uri: match.event.logo }} 
-            style={styles.eventLogo}
-            contentFit="contain" 
-          />
-          <Text style={styles.eventName}>{match.event.name}</Text>
-        </View>
-        <View style={styles.matchTeams}>
-          {match.teams.map((team, index) => (
-            <View key={index} style={styles.teamContainer}>
-              <ExpoImage 
-                source={{ uri: team.logo }} 
-                style={styles.teamLogo}
-                contentFit="contain" 
-              />
-              <Text style={styles.teamName}>{team.name}</Text>
-              {!isUpcoming && <Text style={styles.teamScore}>{team.points}</Text>}
-            </View>
-          ))}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const renderMatch = (match, isUpcoming = false) => (
+    <TouchableOpacity
+      key={match.match.id}
+      style={styles.matchItem}
+      onPress={() => navigation.navigate('MatchDetail', { matchId: match.match?.id })}
+    >
+      <View style={styles.matchHeader}>
+        <ExpoImage
+          source={{ uri: match.event.logo }}
+          style={styles.eventLogo}
+          contentFit="contain"
+        />
+        <Text style={styles.eventName}>{match.event.name}</Text>
+      </View>
+      <View style={styles.matchTeams}>
+        {match.teams.map((team, index) => (
+          <View key={index} style={styles.teamContainer}>
+            <ExpoImage
+              source={{ uri: team.logo }}
+              style={styles.teamLogo}
+              contentFit="contain"
+            />
+            <Text style={styles.teamName}>{team.name}</Text>
+            {!isUpcoming && <Text style={styles.teamScore}>{team.points}</Text>}
+          </View>
+        ))}
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
     <ScrollView style={styles.container}>
@@ -136,7 +129,7 @@ const TeamDetailScreen = ({ route }) => {
         <Text style={styles.sectionTitle}>Players</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.playersContainer}>
           {teamData.players && teamData.players.map((player, index) => (
-            <TouchableOpacity 
+            <TouchableOpacity
               key={index}
               style={styles.playerCard}
               onPress={() => {
@@ -294,6 +287,20 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
   },
+  playerCardImagePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 5,
+  },
+  playerCardImagePlaceholderText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   staffContainer: {
     flexDirection: 'row',
   },
@@ -345,6 +352,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: Colors.textPrimary,
   },
+  eventCardLogo: {
+    width: 50,
+    height: 50,
+    marginBottom: 10,
+  },
+  eventCardLogoPlaceholder: {
+    width: 50,
+    height: 50,
+    marginBottom: 10,
+    backgroundColor: Colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  eventCardLogoPlaceholderText: {
+    color: Colors.textSecondary,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   matchItem: {
     backgroundColor: Colors.surface,
     borderRadius: 8,
@@ -388,24 +413,6 @@ const styles = StyleSheet.create({
     height: 30,
     marginRight: 10,
   },
-  eventCardLogo: {
-    width: 50,
-    height: 50,
-    marginBottom: 10,
-  },
-  eventCardLogoPlaceholder: {
-    width: 50,
-    height: 50,
-    marginBottom: 10,
-    backgroundColor: Colors.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  eventCardLogoPlaceholderText: {
-    color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
 });
 
-export default TeamDetailScreen; 
+export default TeamDetailScreen;

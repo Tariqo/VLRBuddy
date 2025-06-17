@@ -1,33 +1,95 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
 import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
-import { Image } from 'expo-image';
+import { Image as ExpoImage } from 'expo-image';
 import useTeamLogos from '../hooks/useTeamLogos';
 import { Colors } from '../constants/colors';
 
 const AllGamesScreen = () => {
   const [matches, setMatches] = useState([]);
+  const [events, setEvents] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [expandedEvents, setExpandedEvents] = useState({});
   const navigation = useNavigation();
   const { teamLogos, loadingTeamLogos, errorTeamLogos } = useTeamLogos();
 
   useEffect(() => {
-    const fetchMatches = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get('https://vlr.orlandomm.net/api/v1/matches');
-        setMatches(response.data.data);
+        const [matchesResponse, eventsResponse] = await Promise.all([
+          axios.get('https://vlr.orlandomm.net/api/v1/matches'),
+          axios.get('https://vlr.orlandomm.net/api/v1/events?status=all&region=all')
+        ]);
+
+        console.log('First match data:', matchesResponse.data.data[0]);
+        console.log('First event data:', eventsResponse.data.data[0]);
+        
+        setMatches(matchesResponse.data.data);
+        
+        // Create a map of event data using event name as key
+        const eventsMap = {};
+        eventsResponse.data.data.forEach(event => {
+          // Store the full event data
+          eventsMap[event.name] = {
+            id: event.id,
+            img: event.img,
+            status: event.status,
+            dates: event.dates,
+            prizepool: event.prizepool,
+            name: event.name,
+            country: event.country
+          };
+        });
+
+        // Log the events we have
+        console.log('Available events:', Object.keys(eventsMap));
+        
+        setEvents(eventsMap);
       } catch (err) {
-        setError('Failed to fetch matches. Please ensure you have internet connection.');
-        console.error(err);
+        setError('Failed to fetch data. Please ensure you have internet connection.');
+        console.error('Error fetching data:', err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchMatches();
+    fetchData();
   }, []);
+
+  const toggleEvent = (eventName) => {
+    setExpandedEvents(prev => ({
+      ...prev,
+      [eventName]: !prev[eventName]
+    }));
+  };
+
+  const groupMatchesByEvent = () => {
+    const grouped = {};
+    matches.forEach(match => {
+      // Get the tournament name from the match
+      const tournamentName = match.tournament || match.event;
+      console.log('Match tournament:', tournamentName);
+      
+      if (!grouped[tournamentName]) {
+        grouped[tournamentName] = [];
+      }
+      grouped[tournamentName].push(match);
+    });
+    console.log('Grouped tournaments:', Object.keys(grouped));
+    return grouped;
+  };
+
+  const getEventInfo = (eventMatches) => {
+    const rounds = [...new Set(eventMatches.map(match => match.round))];
+    const liveMatches = eventMatches.filter(match => match.status === 'live' || match.status === 'running');
+    return {
+      round: rounds.length > 0 ? rounds[0] : 'Unknown Round',
+      matchCount: eventMatches.length,
+      liveCount: liveMatches.length
+    };
+  };
 
   if (loading || loadingTeamLogos) {
     return (
@@ -54,29 +116,93 @@ const AllGamesScreen = () => {
       <Text style={styles.matchTime}>{item.in}</Text>
       <View style={styles.teamContainer}>
         {teamLogos[item.teams[0]?.name] && (
-          <Image source={{ uri: teamLogos[item.teams[0].name] }} style={styles.teamLogo} contentFit="contain" />
+          <ExpoImage source={{ uri: teamLogos[item.teams[0].name] }} style={styles.teamLogo} contentFit="contain" />
         )}
         <Text style={styles.teamName}>{item.teams[0]?.name}</Text>
         <Text style={styles.teamScore}>{item.teams[0]?.score}</Text>
       </View>
       <View style={styles.teamContainer}>
         {teamLogos[item.teams[1]?.name] && (
-          <Image source={{ uri: teamLogos[item.teams[1].name] }} style={styles.teamLogo} contentFit="contain" />
+          <ExpoImage source={{ uri: teamLogos[item.teams[1].name] }} style={styles.teamLogo} contentFit="contain" />
         )}
         <Text style={styles.teamName}>{item.teams[1]?.name}</Text>
         <Text style={styles.teamScore}>{item.teams[1]?.score}</Text>
       </View>
-      <Text style={styles.eventText}>{item.event}</Text>
     </TouchableOpacity>
   );
+
+  const renderEventSection = ({ item: eventName }) => {
+    const eventMatches = groupMatchesByEvent()[eventName];
+    const isExpanded = expandedEvents[eventName];
+    const eventInfo = getEventInfo(eventMatches);
+    const eventData = events[eventName] || {};
+    
+    return (
+      <View style={styles.eventSection}>
+        <TouchableOpacity 
+          style={styles.eventHeader}
+          onPress={() => toggleEvent(eventName)}
+        >
+          <View style={styles.eventHeaderLeft}>
+            {eventData.img && (
+              <ExpoImage 
+                source={{ uri: eventData.img }} 
+                style={styles.eventLogo} 
+                contentFit="contain"
+                onError={(error) => console.log('Image loading error:', error)}
+              />
+            )}
+            <View style={styles.eventHeaderContent}>
+              <Text style={styles.eventName}>{eventData.name || eventName}</Text>
+              <View style={styles.eventDetails}>
+                <Text style={styles.roundText}>{eventInfo.round}</Text>
+                {eventInfo.liveCount > 0 && (
+                  <View style={styles.liveBadge}>
+                    <Text style={styles.liveText}>LIVE</Text>
+                    <Text style={styles.liveCount}>{eventInfo.liveCount}</Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.eventMeta}>
+                {eventData.dates && (
+                  <Text style={styles.eventDate}>{eventData.dates}</Text>
+                )}
+                {eventData.prizepool && (
+                  <Text style={styles.prizePool}>${eventData.prizepool}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+          <View style={styles.eventHeaderRight}>
+            <Text style={styles.matchCount}>{eventInfo.matchCount} matches</Text>
+            <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
+          </View>
+        </TouchableOpacity>
+        
+        {isExpanded && (
+          <View style={styles.matchesContainer}>
+            {eventMatches.map((match, index) => (
+              <View key={match.id}>
+                {renderMatchItem({ item: match })}
+                {index < eventMatches.length - 1 && <View style={styles.matchDivider} />}
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  const groupedMatches = groupMatchesByEvent();
+  const eventNames = Object.keys(groupedMatches);
 
   return (
     <View style={styles.container}>
       <Text style={styles.header}>All Games</Text>
       <FlatList
-        data={matches}
-        keyExtractor={(item) => item.id.toString()}
-        renderItem={renderMatchItem}
+        data={eventNames}
+        keyExtractor={(item) => item}
+        renderItem={renderEventSection}
         ListEmptyComponent={
           <View style={styles.centered}>
             <Text style={styles.emptyText}>No matches found.</Text>
@@ -91,7 +217,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-    paddingTop: 50, // Adjust for status bar
+    paddingTop: 50,
   },
   centered: {
     flex: 1,
@@ -105,17 +231,110 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     color: Colors.textPrimary,
   },
-  matchItem: {
+  eventSection: {
+    marginBottom: 10,
+  },
+  eventHeader: {
     backgroundColor: Colors.surface,
     padding: 15,
     marginHorizontal: 15,
-    marginBottom: 10,
     borderRadius: 8,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     shadowColor: Colors.textPrimary,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 1.41,
     elevation: 2,
+  },
+  eventHeaderLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  eventHeaderRight: {
+    alignItems: 'flex-end',
+  },
+  eventLogo: {
+    width: 40,
+    height: 40,
+    marginRight: 12,
+    borderRadius: 4,
+  },
+  eventHeaderContent: {
+    flex: 1,
+  },
+  eventName: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+  },
+  eventDetails: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  roundText: {
+    fontSize: 14,
+    color: Colors.primary,
+    marginRight: 10,
+    fontWeight: '500',
+  },
+  liveBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.error,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  liveText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginRight: 4,
+  },
+  liveCount: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  eventMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  eventDate: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginRight: 8,
+  },
+  prizePool: {
+    fontSize: 12,
+    color: Colors.accent,
+    fontWeight: '500',
+  },
+  matchCount: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 4,
+  },
+  expandIcon: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+  },
+  matchesContainer: {
+    backgroundColor: Colors.surface,
+    marginHorizontal: 15,
+    marginTop: 1,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 8,
+    overflow: 'hidden',
+  },
+  matchItem: {
+    padding: 15,
   },
   matchTime: {
     fontSize: 16,
@@ -132,7 +351,6 @@ const styles = StyleSheet.create({
   teamLogo: {
     width: 30,
     height: 30,
-    contentFit: 'contain',
     marginRight: 10,
   },
   teamName: {
@@ -147,10 +365,10 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     color: Colors.textPrimary,
   },
-  eventText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 5,
+  matchDivider: {
+    height: 1,
+    backgroundColor: Colors.border,
+    marginHorizontal: 15,
   },
   errorText: {
     color: Colors.error,

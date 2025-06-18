@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
-import axios from 'axios';
 import { Image } from 'expo-image';
 import useTeamLogos from '../hooks/useTeamLogos';
 import { Colors } from '../constants/colors';
+import { getLiveMatches } from '../services/pandascoreApi';
 
 const LiveScreen = () => {
   const [liveMatches, setLiveMatches] = useState([]);
@@ -14,8 +14,9 @@ const LiveScreen = () => {
   useEffect(() => {
     const fetchLiveMatches = async () => {
       try {
-        const response = await axios.get('https://vlr.orlandomm.net/api/v1/matches/live');
-        setLiveMatches(response.data.data);
+        const matches = await getLiveMatches();
+        setLiveMatches(matches);
+        console.log('Fetched live matches data:', matches);
       } catch (err) {
         setError('Failed to fetch live matches');
       } finally {
@@ -43,25 +44,31 @@ const LiveScreen = () => {
     );
   }
 
+  const formatDate = (dateString) => {
+    if (!dateString) return 'TBD';
+    const d = new Date(dateString);
+    return isNaN(d) ? 'TBD' : d.toLocaleString();
+  };
+
   const renderLiveMatchItem = ({ item }) => (
     <View style={styles.matchItem}>
       <Text style={styles.matchStatus}>LIVE</Text>
-      <Text style={styles.matchTime}>{item.in}</Text>
+      <Text style={styles.matchTime}>{formatDate(item.scheduled_at || item.date)}</Text>
       <View style={styles.teamContainer}>
-        {teamLogos[item.teams[0]?.name] && (
-          <Image source={{ uri: teamLogos[item.teams[0].name] }} style={styles.teamLogo} contentFit="contain" />
+        {teamLogos[item.opponents[0]?.opponent?.name] && (
+          <Image source={{ uri: teamLogos[item.opponents[0].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
         )}
-        <Text style={styles.teamName}>{item.teams[0]?.name}</Text>
-        <Text style={styles.teamScore}>{item.teams[0]?.score}</Text>
+        <Text style={styles.teamName}>{item.opponents[0]?.opponent?.name}</Text>
+        <Text style={styles.teamScore}>{item.opponents[0]?.score ?? '-'}</Text>
       </View>
       <View style={styles.teamContainer}>
-        {teamLogos[item.teams[1]?.name] && (
-          <Image source={{ uri: teamLogos[item.teams[1].name] }} style={styles.teamLogo} contentFit="contain" />
+        {teamLogos[item.opponents[1]?.opponent?.name] && (
+          <Image source={{ uri: teamLogos[item.opponents[1].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
         )}
-        <Text style={styles.teamName}>{item.teams[1]?.name}</Text>
-        <Text style={styles.teamScore}>{item.teams[1]?.score}</Text>
+        <Text style={styles.teamName}>{item.opponents[1]?.opponent?.name}</Text>
+        <Text style={styles.teamScore}>{item.opponents[1]?.score ?? '-'}</Text>
       </View>
-      <Text style={styles.eventText}>{item.event}</Text>
+      <Text style={styles.eventText}>{item.league?.name || item.tournament?.name}</Text>
     </View>
   );
 

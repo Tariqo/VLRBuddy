@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity } from 'react-native';
-import axios from 'axios';
 import { Image } from 'expo-image';
 import useTeamLogos from '../hooks/useTeamLogos';
 import { Colors } from '../constants/colors';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { getMatchDetails } from '../services/pandascoreApi';
 
 const MatchDetailScreen = () => {
   const route = useRoute();
@@ -15,52 +15,12 @@ const MatchDetailScreen = () => {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('SUMMARY');
   const { teamLogos, loadingTeamLogos, errorTeamLogos } = useTeamLogos();
-  const [teamIds, setTeamIds] = useState({});
-  const [playersData, setPlayersData] = useState({});
-  const [loadingPlayers, setLoadingPlayers] = useState(false);
-  const [errorPlayers, setErrorPlayers] = useState(null);
-
-  useEffect(() => {
-    const fetchTeamIds = async () => {
-      try {
-        console.log('Fetching team IDs...');
-        let allTeams = [];
-        let currentPage = 1;
-        let hasNextPage = true;
-
-        while (hasNextPage) {
-          const response = await axios.get(`https://vlr.orlandomm.net/api/v1/teams?page=${currentPage}`);
-          console.log(`Fetched page ${currentPage} of teams`);
-          allTeams = [...allTeams, ...response.data.data];
-          hasNextPage = response.data.pagination.hasNextPage;
-          currentPage++;
-        }
-
-        console.log('Total teams fetched:', allTeams.length);
-        const teamsMap = {};
-        allTeams.forEach(team => {
-          teamsMap[team.name] = team.id;
-        });
-        console.log('Created teams map with', Object.keys(teamsMap).length, 'teams');
-        setTeamIds(teamsMap);
-      } catch (err) {
-        console.error('Error fetching team IDs:', err);
-      }
-    };
-
-    fetchTeamIds();
-  }, []);
 
   useEffect(() => {
     const fetchMatchDetails = async () => {
       try {
-        const response = await axios.get('https://vlr.orlandomm.net/api/v1/matches');
-        const foundMatch = response.data.data.find(match => match.id === matchId);
-        if (foundMatch) {
-          setMatchDetails(foundMatch);
-        } else {
-          setError('Match not found.');
-        }
+        const match = await getMatchDetails(matchId);
+        setMatchDetails(match);
       } catch (err) {
         setError('Failed to fetch match details. Please ensure you have internet connection.');
         console.error(err);
@@ -71,34 +31,6 @@ const MatchDetailScreen = () => {
 
     fetchMatchDetails();
   }, [matchId]);
-
-  useEffect(() => {
-    const fetchPlayersForTeams = async () => {
-      if (activeTab === 'PLAYERS' && matchDetails && Object.keys(playersData).length === 0) {
-        setLoadingPlayers(true);
-        setErrorPlayers(null);
-        const newPlayersData = {};
-        try {
-          for (const team of matchDetails.teams) {
-            const teamId = teamIds[team.name];
-            if (teamId) {
-              console.log('Fetching players for team:', team.name, 'with ID:', teamId);
-              const response = await axios.get(`https://vlr.orlandomm.net/api/v1/teams/${teamId}`);
-              newPlayersData[team.name] = response.data.data.players || [];
-            }
-          }
-          setPlayersData(newPlayersData);
-        } catch (err) {
-          console.error('Error fetching players data:', err);
-          setErrorPlayers('Failed to load player data.');
-        } finally {
-          setLoadingPlayers(false);
-        }
-      }
-    };
-
-    fetchPlayersForTeams();
-  }, [activeTab, matchDetails, teamIds, playersData]);
 
   if (loading || loadingTeamLogos) {
     return (
@@ -132,41 +64,37 @@ const MatchDetailScreen = () => {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>MATCH OVERVIEW</Text>
             <Text style={styles.previewText}>
-              {
-                matchDetails.status === 'completed' ? 
-                `Match played ${matchDetails.in || matchDetails.ago}. ` : 
-                `Match scheduled for ${matchDetails.in}. `
+              {matchDetails.status === 'finished' ? 
+                `Match completed on ${new Date(matchDetails.end_at).toLocaleString()}. ` : 
+                `Match scheduled for ${new Date(matchDetails.scheduled_at).toLocaleString()}. `
               }
-              Event: {matchDetails.event || 'N/A'}
+              Event: {matchDetails.tournament?.name || matchDetails.league?.name || 'N/A'}
             </Text>
-            <Text style={styles.showFullPreview}>(No detailed preview text available from API)</Text>
+            {matchDetails.streams && matchDetails.streams.length > 0 && (
+              <View style={styles.streamsSection}>
+                <Text style={styles.streamsTitle}>Available Streams:</Text>
+                {matchDetails.streams.map((stream, index) => (
+                  <TouchableOpacity
+                    key={index}
+                    style={styles.streamLink}
+                    onPress={() => Linking.openURL(stream.raw_url)}
+                  >
+                    <Text style={styles.streamText}>{stream.language} - {stream.platform}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         );
       case 'PLAYERS':
-        if (loadingPlayers) {
-          return (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-              <Text>Loading players...</Text>
-            </View>
-          );
-        }
-
-        if (errorPlayers) {
-          return (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>{errorPlayers}</Text>
-            </View>
-          );
-        }
         return (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>PLAYERS</Text>
-            {matchDetails.teams?.map((team, teamIndex) => (
+            {matchDetails.opponents?.map((opponent, teamIndex) => (
               <View key={teamIndex} style={styles.teamPlayersSection}>
-                <Text style={styles.teamPlayersTitle}>{team.name}</Text>
+                <Text style={styles.teamPlayersTitle}>{opponent.opponent.name}</Text>
                 <View style={styles.playersGrid}>
-                  {playersData[team.name]?.map((player, playerIndex) => (
+                  {opponent.opponent.players?.map((player, playerIndex) => (
                     <TouchableOpacity 
                       key={playerIndex}
                       style={styles.playerCard}
@@ -176,9 +104,9 @@ const MatchDetailScreen = () => {
                         }
                       }}
                     >
-                      {player.img ? (
+                      {player.image_url ? (
                         <Image 
-                          source={{ uri: player.img }} 
+                          source={{ uri: player.image_url }} 
                           style={styles.playerImage}
                           contentFit="cover"
                         />
@@ -229,8 +157,10 @@ const MatchDetailScreen = () => {
       <View style={styles.header}>
         <View style={styles.matchInfo}>
           <View style={styles.eventInfo}>
-            <Image source={{ uri: matchDetails.eventLogo }} style={styles.eventLogo} contentFit="contain" />
-            <Text style={styles.eventName}>{matchDetails.event || 'N/A'}</Text>
+            {matchDetails.tournament?.image_url && (
+              <Image source={{ uri: matchDetails.tournament.image_url }} style={styles.eventLogo} contentFit="contain" />
+            )}
+            <Text style={styles.eventName}>{matchDetails.tournament?.name || matchDetails.league?.name || 'N/A'}</Text>
           </View>
           <Text style={styles.matchStatus}>{matchDetails.status}</Text>
         </View>
@@ -238,38 +168,38 @@ const MatchDetailScreen = () => {
       
       <View style={styles.teamsContainer}>
         <View style={styles.team}>
-          {teamLogos[matchDetails.teams[0]?.name] && (
-            <Image source={{ uri: teamLogos[matchDetails.teams[0].name] }} style={styles.teamLogo} contentFit="contain" />
+          {teamLogos[matchDetails.opponents[0]?.opponent?.name] && (
+            <Image source={{ uri: teamLogos[matchDetails.opponents[0].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
           )}
           <TouchableOpacity 
             style={styles.teamNameContainer}
             onPress={() => {
-              const teamName = matchDetails.teams[0]?.name;
-              const teamId = teamIds[teamName];
+              const teamId = matchDetails.opponents[0]?.opponent?.id;
               if (teamId) {
                 navigation.navigate('TeamDetail', { teamId });
               }
             }}
           >
-            <Text style={styles.teamName}>{matchDetails.teams[0]?.name}</Text>
+            <Text style={styles.teamName}>{matchDetails.opponents[0]?.opponent?.name}</Text>
           </TouchableOpacity>
         </View>
-        <Text style={styles.score}>{matchDetails.teams[0]?.score || '-'} - {matchDetails.teams[1]?.score || '-'}</Text>
+        <Text style={styles.score}>
+          {matchDetails.opponents[0]?.score || 0} - {matchDetails.opponents[1]?.score || 0}
+        </Text>
         <View style={styles.team}>
-          {teamLogos[matchDetails.teams[1]?.name] && (
-            <Image source={{ uri: teamLogos[matchDetails.teams[1].name] }} style={styles.teamLogo} contentFit="contain" />
+          {teamLogos[matchDetails.opponents[1]?.opponent?.name] && (
+            <Image source={{ uri: teamLogos[matchDetails.opponents[1].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
           )}
           <TouchableOpacity 
             style={styles.teamNameContainer}
             onPress={() => {
-              const teamName = matchDetails.teams[1]?.name;
-              const teamId = teamIds[teamName];
+              const teamId = matchDetails.opponents[1]?.opponent?.id;
               if (teamId) {
                 navigation.navigate('TeamDetail', { teamId });
               }
             }}
           >
-            <Text style={styles.teamName}>{matchDetails.teams[1]?.name}</Text>
+            <Text style={styles.teamName}>{matchDetails.opponents[1]?.opponent?.name}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -555,6 +485,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.textSecondary,
     marginHorizontal: 10,
+  },
+  streamsSection: {
+    marginTop: 10,
+  },
+  streamsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+    color: Colors.textPrimary,
+  },
+  streamLink: {
+    padding: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 5,
+    marginBottom: 5,
+  },
+  streamText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
   },
 });
 

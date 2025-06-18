@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, Image } from 'react-native';
-import axios from 'axios';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Image as ExpoImage } from 'expo-image';
 import useTeamLogos from '../hooks/useTeamLogos';
 import { Colors } from '../constants/colors';
+import { getUpcomingMatches, getTournaments } from '../services/pandascoreApi';
 
 const AllGamesScreen = () => {
   const [matches, setMatches] = useState([]);
@@ -14,34 +14,39 @@ const AllGamesScreen = () => {
   const [expandedEvents, setExpandedEvents] = useState({});
   const navigation = useNavigation();
   const { teamLogos, loadingTeamLogos, errorTeamLogos } = useTeamLogos();
-  const [teamIds, setTeamIds] = useState({});
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'TBD';
+    const d = new Date(dateString);
+    return isNaN(d) ? 'TBD' : d.toLocaleString();
+  };
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [matchesResponse, eventsResponse] = await Promise.all([
-          axios.get('https://vlr.orlandomm.net/api/v1/matches'),
-          axios.get('https://vlr.orlandomm.net/api/v1/events?status=all&region=all')
+        const [matchesData, tournamentsData] = await Promise.all([
+          getUpcomingMatches(),
+          getTournaments()
         ]);
         
-        setMatches(matchesResponse.data.data);
+        setMatches(matchesData);
         
-        // Create a map of event data using event name as key
+        // Create a map of tournament data using tournament name as key
         const eventsMap = {};
-        eventsResponse.data.data.forEach(event => {
-          // Store the full event data
-          eventsMap[event.name] = {
-            id: event.id,
-            img: event.img,
-            status: event.status,
-            dates: event.dates,
-            prizepool: event.prizepool,
-            name: event.name,
-            country: event.country
+        tournamentsData.forEach(tournament => {
+          eventsMap[tournament.name] = {
+            id: tournament.id,
+            img: tournament.image_url,
+            status: tournament.status,
+            dates: `${tournament.begin_at} - ${tournament.end_at}`,
+            prizepool: tournament.prizepool,
+            name: tournament.name,
+            country: tournament.serie?.region
           };
         });
         
         setEvents(eventsMap);
+        console.log('Fetched matches data:', matchesData);
       } catch (err) {
         setError('Failed to fetch data. Please ensure you have internet connection.');
         console.error('Error fetching data:', err);
@@ -51,37 +56,6 @@ const AllGamesScreen = () => {
     };
 
     fetchData();
-  }, []);
-
-  useEffect(() => {
-    const fetchTeamIds = async () => {
-      try {
-        console.log('Fetching team IDs...');
-        let allTeams = [];
-        let currentPage = 1;
-        let hasNextPage = true;
-
-        while (hasNextPage) {
-          const response = await axios.get(`https://vlr.orlandomm.net/api/v1/teams?page=${currentPage}`);
-          console.log(`Fetched page ${currentPage} of teams`);
-          allTeams = [...allTeams, ...response.data.data];
-          hasNextPage = response.data.pagination.hasNextPage;
-          currentPage++;
-        }
-
-        console.log('Total teams fetched:', allTeams.length);
-        const teamsMap = {};
-        allTeams.forEach(team => {
-          teamsMap[team.name] = team.id;
-        });
-        console.log('Created teams map with', Object.keys(teamsMap).length, 'teams');
-        setTeamIds(teamsMap);
-      } catch (err) {
-        console.error('Error fetching team IDs:', err);
-      }
-    };
-
-    fetchTeamIds();
   }, []);
 
   const toggleEvent = (eventName) => {
@@ -94,8 +68,7 @@ const AllGamesScreen = () => {
   const groupMatchesByEvent = () => {
     const grouped = {};
     matches.forEach(match => {
-      // Get the tournament name from the match
-      const tournamentName = match.tournament || match.event;
+      const tournamentName = match.tournament?.name || match.league?.name;
       
       if (!grouped[tournamentName]) {
         grouped[tournamentName] = [];
@@ -106,10 +79,9 @@ const AllGamesScreen = () => {
   };
 
   const getEventInfo = (eventMatches) => {
-    const rounds = [...new Set(eventMatches.map(match => match.round))];
-    const liveMatches = eventMatches.filter(match => match.status === 'live' || match.status === 'running');
+    const liveMatches = eventMatches.filter(match => match.status === 'running');
     return {
-      round: rounds.length > 0 ? rounds[0] : 'Unknown Round',
+      round: eventMatches[0]?.serie?.name || 'Unknown Round',
       matchCount: eventMatches.length,
       liveCount: liveMatches.length
     };
@@ -138,54 +110,40 @@ const AllGamesScreen = () => {
         style={styles.matchItem}
         onPress={() => navigation.navigate('MatchDetail', { matchId: item.id })} 
       >
-        <Text style={styles.matchTime}>{item.in}</Text>
+        <Text style={styles.matchTime}>{formatDate(item.scheduled_at)}</Text>
         <View style={styles.teamContainer}>
-          {teamLogos[item.teams[0]?.name] && (
-            <ExpoImage source={{ uri: teamLogos[item.teams[0].name] }} style={styles.teamLogo} contentFit="contain" />
+          {teamLogos[item.opponents[0]?.opponent?.name] && (
+            <ExpoImage source={{ uri: teamLogos[item.opponents[0].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
           )}
           <TouchableOpacity 
             style={styles.teamNameContainer}
             onPress={() => {
-              const teamName = item.teams[0]?.name;
-              console.log('Clicked team name:', teamName);
-              console.log('Current teamIds map:', teamIds);
-              const teamId = teamIds[teamName];
-              console.log('Found team ID:', teamId);
+              const teamId = item.opponents[0]?.opponent?.id;
               if (teamId) {
-                console.log('Navigating to TeamDetail with ID:', teamId);
                 navigation.navigate('TeamDetail', { teamId });
-              } else {
-                console.log('No team ID found for:', teamName);
               }
             }}
           >
-            <Text style={styles.teamName}>{item.teams[0]?.name}</Text>
+            <Text style={styles.teamName}>{item.opponents[0]?.opponent?.name}</Text>
           </TouchableOpacity>
-          <Text style={styles.teamScore}>{item.teams[0]?.score}</Text>
+          <Text style={styles.teamScore}>{item.opponents[0]?.score ?? '-'}</Text>
         </View>
         <View style={styles.teamContainer}>
-          {teamLogos[item.teams[1]?.name] && (
-            <ExpoImage source={{ uri: teamLogos[item.teams[1].name] }} style={styles.teamLogo} contentFit="contain" />
+          {teamLogos[item.opponents[1]?.opponent?.name] && (
+            <ExpoImage source={{ uri: teamLogos[item.opponents[1].opponent.name] }} style={styles.teamLogo} contentFit="contain" />
           )}
           <TouchableOpacity 
             style={styles.teamNameContainer}
             onPress={() => {
-              const teamName = item.teams[1]?.name;
-              console.log('Clicked team name:', teamName);
-              console.log('Current teamIds map:', teamIds);
-              const teamId = teamIds[teamName];
-              console.log('Found team ID:', teamId);
+              const teamId = item.opponents[1]?.opponent?.id;
               if (teamId) {
-                console.log('Navigating to TeamDetail with ID:', teamId);
                 navigation.navigate('TeamDetail', { teamId });
-              } else {
-                console.log('No team ID found for:', teamName);
               }
             }}
           >
-            <Text style={styles.teamName}>{item.teams[1]?.name}</Text>
+            <Text style={styles.teamName}>{item.opponents[1]?.opponent?.name}</Text>
           </TouchableOpacity>
-          <Text style={styles.teamScore}>{item.teams[1]?.score}</Text>
+          <Text style={styles.teamScore}>{item.opponents[1]?.score ?? '-'}</Text>
         </View>
       </TouchableOpacity>
     );
@@ -238,34 +196,29 @@ const AllGamesScreen = () => {
             <Text style={styles.expandIcon}>{isExpanded ? '▼' : '▶'}</Text>
           </View>
         </TouchableOpacity>
-        
         {isExpanded && (
           <View style={styles.matchesContainer}>
-            {eventMatches.map((match, index) => (
-              <View key={match.id}>
-                {renderMatchItem({ item: match })}
-                {index < eventMatches.length - 1 && <View style={styles.matchDivider} />}
-              </View>
-            ))}
+            <FlatList
+              data={eventMatches}
+              keyExtractor={(item) => item.id.toString()}
+              renderItem={renderMatchItem}
+              ItemSeparatorComponent={() => <View style={styles.matchDivider} />}
+            />
           </View>
         )}
       </View>
     );
   };
 
-  const groupedMatches = groupMatchesByEvent();
-  const eventNames = Object.keys(groupedMatches);
-
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>All Games</Text>
       <FlatList
-        data={eventNames}
+        data={Object.keys(groupMatchesByEvent())}
         keyExtractor={(item) => item}
         renderItem={renderEventSection}
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>No matches found.</Text>
+            <Text style={styles.emptyText}>No upcoming matches found.</Text>
           </View>
         }
       />

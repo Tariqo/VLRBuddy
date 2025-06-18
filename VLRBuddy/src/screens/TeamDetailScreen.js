@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import axios from 'axios';
 import { useNavigation } from '@react-navigation/native';
 import { Colors } from '../constants/colors';
+import { getTeamDetails, getTournaments } from '../services/pandascoreApi';
 
 const TeamDetailScreen = ({ route }) => {
   const { teamId } = route.params;
@@ -16,13 +16,13 @@ const TeamDetailScreen = ({ route }) => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [teamResponse, eventsResponse] = await Promise.all([
-          axios.get(`https://vlr.orlandomm.net/api/v1/teams/${teamId}`),
-          axios.get('https://vlr.orlandomm.net/api/v1/events')
+        const [teamResponse, tournamentsResponse] = await Promise.all([
+          getTeamDetails(teamId),
+          getTournaments()
         ]);
 
-        setTeamData(teamResponse.data.data);
-        setAllEvents(eventsResponse.data.data);
+        setTeamData(teamResponse);
+        setAllEvents(tournamentsResponse);
       } catch (err) {
         if (err.response) {
           setError('Failed to fetch data');
@@ -36,6 +36,12 @@ const TeamDetailScreen = ({ route }) => {
       fetchData();
     }
   }, [teamId]);
+
+  const formatDate = (dateString) => {
+    if (!dateString) return 'TBD';
+    const d = new Date(dateString);
+    return isNaN(d) ? 'TBD' : d.toLocaleString();
+  };
 
   if (loading) {
     return (
@@ -65,9 +71,9 @@ const TeamDetailScreen = ({ route }) => {
     const eventData = allEvents.find(e => e.id === event.id);
     return (
       <TouchableOpacity key={event.id} style={styles.eventCard}>
-        {eventData?.img ? (
+        {eventData?.image_url ? (
           <ExpoImage
-            source={{ uri: eventData.img }}
+            source={{ uri: eventData.image_url }}
             style={styles.eventCardLogo}
             contentFit="contain"
           />
@@ -77,36 +83,40 @@ const TeamDetailScreen = ({ route }) => {
           </View>
         )}
         <Text style={styles.eventName}>{event.name}</Text>
-        <Text style={styles.eventYear}>{event.year}</Text>
-        <Text style={styles.eventResults}>{event.results.join(', ')}</Text>
+        <Text style={styles.eventYear}>{formatDate(event.begin_at)}</Text>
+        <Text style={styles.eventResults}>{event.results?.join(', ') || 'No results'}</Text>
       </TouchableOpacity>
     );
   };
 
   const renderMatch = (match, isUpcoming = false) => (
     <TouchableOpacity
-      key={match.match.id}
+      key={match.id}
       style={styles.matchItem}
-      onPress={() => navigation.navigate('MatchDetail', { matchId: match.match?.id })}
+      onPress={() => navigation.navigate('MatchDetail', { matchId: match.id })}
     >
       <View style={styles.matchHeader}>
-        <ExpoImage
-          source={{ uri: match.event.logo }}
-          style={styles.eventLogo}
-          contentFit="contain"
-        />
-        <Text style={styles.eventName}>{match.event.name}</Text>
+        {match.tournament?.image_url && (
+          <ExpoImage
+            source={{ uri: match.tournament.image_url }}
+            style={styles.eventLogo}
+            contentFit="contain"
+          />
+        )}
+        <Text style={styles.eventName}>{match.tournament?.name || match.league?.name}</Text>
       </View>
       <View style={styles.matchTeams}>
-        {match.teams.map((team, index) => (
+        {match.opponents?.map((opponent, index) => (
           <View key={index} style={styles.teamContainer}>
-            <ExpoImage
-              source={{ uri: team.logo }}
-              style={styles.teamLogo}
-              contentFit="contain"
-            />
-            <Text style={styles.teamName}>{team.name}</Text>
-            {!isUpcoming && <Text style={styles.teamScore}>{team.points}</Text>}
+            {opponent.opponent?.image_url && (
+              <ExpoImage
+                source={{ uri: opponent.opponent.image_url }}
+                style={styles.teamLogo}
+                contentFit="contain"
+              />
+            )}
+            <Text style={styles.teamName}>{opponent.opponent?.name}</Text>
+            {!isUpcoming && <Text style={styles.teamScore}>{opponent.score ?? '-'}</Text>}
           </View>
         ))}
       </View>
@@ -116,84 +126,73 @@ const TeamDetailScreen = ({ route }) => {
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <ExpoImage
-          source={{ uri: teamData.info.logo }}
-          style={styles.teamLogo}
-          contentFit="contain"
-        />
-        <Text style={styles.teamName}>{teamData.info.name}</Text>
-        <Text style={styles.teamTag}>{teamData.info.tag}</Text>
+        {teamData.image_url && (
+          <ExpoImage
+            source={{ uri: teamData.image_url }}
+            style={styles.teamLogo}
+            contentFit="contain"
+          />
+        )}
+        <Text style={styles.teamName}>{teamData.name}</Text>
+        {teamData.location && (
+          <Text style={styles.teamLocation}>{teamData.location}</Text>
+        )}
       </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Players</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.playersContainer}>
-          {teamData.players && teamData.players.map((player, index) => (
-            <TouchableOpacity
-              key={index}
-              style={styles.playerCard}
-              onPress={() => {
-                const playerId = player.id;
-                if (playerId) {
-                  navigation.navigate('PlayerDetail', { playerId });
-                }
-              }}
-            >
-              <ExpoImage
-                source={{ uri: player.img }}
-                style={styles.playerCardImage}
-                contentFit="cover"
-              />
-              <Text style={styles.playerCardName}>{player.name || 'Unknown Player'}</Text>
-              <Text style={styles.playerCardRole}>{player.role || 'Player'}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {teamData.staff && teamData.staff.length > 0 && (
+      {teamData.players && teamData.players.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Staff</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.staffContainer}>
-            {teamData.staff.map((staff, index) => (
-              <View key={index} style={styles.playerCard}>
-                {staff.img ? (
+          <Text style={styles.sectionTitle}>Players</Text>
+          <View style={styles.playersGrid}>
+            {teamData.players.map((player) => (
+              <TouchableOpacity
+                key={player.id}
+                style={styles.playerCard}
+                onPress={() => navigation.navigate('PlayerDetail', { playerId: player.id })}
+              >
+                {player.image_url ? (
                   <ExpoImage
-                    source={{ uri: staff.img }}
-                    style={styles.playerCardImage}
+                    source={{ uri: player.image_url }}
+                    style={styles.playerImage}
                     contentFit="cover"
                   />
                 ) : (
-                  <View style={styles.playerCardImagePlaceholder}>
-                    <Text style={styles.playerCardImagePlaceholderText}>STAFF</Text>
+                  <View style={[styles.playerImage, styles.playerImagePlaceholder]}>
+                    <Text style={styles.playerImagePlaceholderText}>
+                      {player.name?.charAt(0) || '?'}
+                    </Text>
                   </View>
                 )}
-                <Text style={styles.playerCardName}>{staff.name || 'Unknown Staff'}</Text>
-                <Text style={styles.playerCardRole}>{staff.role || 'Staff'}</Text>
-              </View>
+                <Text style={styles.playerName}>{player.name}</Text>
+                <Text style={styles.playerRole}>{player.role || 'Player'}</Text>
+                {player.current_team && (
+                  <Text style={styles.playerTeam}>{player.current_team.name}</Text>
+                )}
+              </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </View>
       )}
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Events</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.eventsContainer}>
-          {teamData.events.map(renderEvent)}
-        </ScrollView>
-      </View>
-
-      {teamData.upcoming && teamData.upcoming.length > 0 && (
+      {teamData.upcoming_matches && teamData.upcoming_matches.length > 0 && (
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Upcoming Matches</Text>
-          {teamData.upcoming.map((match, index) => renderMatch(match, true))}
+          {teamData.upcoming_matches.map((match) => renderMatch(match, true))}
         </View>
       )}
 
-      {teamData.results && teamData.results.length > 0 && (
+      {teamData.past_matches && teamData.past_matches.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Recent Results</Text>
-          {teamData.results.map((match, index) => renderMatch(match))}
+          <Text style={styles.sectionTitle}>Past Matches</Text>
+          {teamData.past_matches.map((match) => renderMatch(match))}
+        </View>
+      )}
+
+      {teamData.tournaments && teamData.tournaments.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Tournaments</Text>
+          <View style={styles.eventsGrid}>
+            {teamData.tournaments.map((tournament) => renderEvent(tournament))}
+          </View>
         </View>
       )}
     </ScrollView>
@@ -243,7 +242,7 @@ const styles = StyleSheet.create({
     marginTop: 5,
     color: Colors.textPrimary,
   },
-  teamTag: {
+  teamLocation: {
     fontSize: 16,
     color: Colors.textSecondary,
   },
@@ -259,82 +258,66 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     color: Colors.textPrimary,
   },
-  playersContainer: {
+  playersGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   playerCard: {
+    width: '48%',
     backgroundColor: Colors.surface,
     borderRadius: 8,
     padding: 10,
+    marginBottom: 10,
     alignItems: 'center',
-    marginRight: 10,
-    width: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  playerCardImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginBottom: 5,
+  playerImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 8,
   },
-  playerCardName: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    color: Colors.textPrimary,
-  },
-  playerCardRole: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-  },
-  playerCardImagePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Colors.background,
+  playerImagePlaceholder: {
+    backgroundColor: Colors.border,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 5,
   },
-  playerCardImagePlaceholderText: {
+  playerImagePlaceholderText: {
+    fontSize: 24,
     color: Colors.textSecondary,
-    fontSize: 12,
-    fontWeight: 'bold',
   },
-  staffContainer: {
-    flexDirection: 'row',
-  },
-  staffItem: {
-    backgroundColor: Colors.surface,
-    borderRadius: 8,
-    padding: 10,
-    alignItems: 'center',
-    marginRight: 10,
-    width: 120,
-  },
-  staffInfo: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  staffName: {
-    fontSize: 14,
+  playerName: {
+    fontSize: 16,
     fontWeight: 'bold',
     color: Colors.textPrimary,
     textAlign: 'center',
+    marginBottom: 4,
   },
-  staffRole: {
+  playerRole: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 2,
+  },
+  playerTeam: {
     fontSize: 12,
     color: Colors.textSecondary,
     textAlign: 'center',
   },
-  eventsContainer: {
+  eventsGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
   },
   eventCard: {
     backgroundColor: Colors.surface,
     borderRadius: 8,
     padding: 10,
     marginRight: 10,
+    marginBottom: 10,
     width: 150,
   },
   eventName: {
@@ -376,22 +359,21 @@ const styles = StyleSheet.create({
     padding: 15,
     marginBottom: 10,
   },
-  matchTime: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginBottom: 5,
+  matchHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  eventLogo: {
+    width: 30,
+    height: 30,
+    marginRight: 10,
   },
   matchTeams: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 5,
-  },
-  vsText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.textPrimary,
-    marginHorizontal: 10,
   },
   teamContainer: {
     flexDirection: 'row',
@@ -403,15 +385,19 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginLeft: 10,
   },
-  matchHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  eventLogo: {
-    width: 30,
-    height: 30,
+  teamLogo: {
+    width: 27,
+    height: 27,
     marginRight: 10,
+    marginBottom: 0,
+    overflow: 'hidden',
+    flexShrink: 0,
+    flexGrow: 0,
+  },
+  teamName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
   },
 });
 

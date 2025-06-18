@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
-import axios from 'axios';
 import { Image } from 'expo-image';
 import { Colors } from '../constants/colors';
+import { getTournaments } from '../services/pandascoreApi';
 
 const LeaguesScreen = () => {
   const [events, setEvents] = useState([]);
@@ -12,8 +12,8 @@ const LeaguesScreen = () => {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await axios.get('https://vlr.orlandomm.net/api/v1/events');
-        setEvents(response.data.data);
+        const tournaments = await getTournaments();
+        setEvents(tournaments);
       } catch (err) {
         setError('Failed to fetch events. Please ensure you have internet connection.');
       } finally {
@@ -43,13 +43,17 @@ const LeaguesScreen = () => {
 
   const renderEventItem = ({ item }) => (
     <View style={styles.eventItem}>
-      {item.img && (
-        <Image source={{ uri: item.img }} style={styles.eventLogo} contentFit="contain" />
+      {item.image_url && (
+        <Image source={{ uri: item.image_url }} style={styles.eventLogo} contentFit="contain" />
       )}
       <Text style={styles.eventName}>{item.name}</Text>
-      <Text style={styles.eventDates}>{item.dates}</Text>
+      <Text style={styles.eventDates}>
+        {new Date(item.begin_at).toLocaleDateString()} - {new Date(item.end_at).toLocaleDateString()}
+      </Text>
       <Text style={styles.eventStatus}>Status: {item.status}</Text>
-      {item.prizepool && <Text style={styles.eventPrizePool}>Prize Pool: {item.prizepool}</Text>}
+      {item.prizepool && <Text style={styles.eventPrizePool}>Prize Pool: ${item.prizepool}</Text>}
+      {item.serie?.name && <Text style={styles.eventSeries}>Series: {item.serie.name}</Text>}
+      {item.serie?.region && <Text style={styles.eventRegion}>Region: {item.serie.region}</Text>}
     </View>
   );
 
@@ -62,7 +66,7 @@ const LeaguesScreen = () => {
         renderItem={renderEventItem}
         ListEmptyComponent={
           <View style={styles.centered}>
-            <Text style={styles.emptyText}>No leagues or events found.</Text>
+            <Text style={styles.emptyText}>No events found.</Text>
           </View>
         }
       />
@@ -126,6 +130,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
     color: Colors.textPrimary,
+  },
+  eventSeries: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginBottom: 5,
+  },
+  eventRegion: {
+    fontSize: 14,
+    color: Colors.textSecondary,
   },
   errorText: {
     color: Colors.error,
